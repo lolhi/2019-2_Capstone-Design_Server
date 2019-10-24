@@ -1,0 +1,23 @@
+{
+  "name": "barrierfreeserver",
+  "version": "0.0.1",
+  "description": "2019-2 Convergence Capstone Design Barrier Free Android Application Server",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lolhi/2019-2_Convergence-Capstone-Design_Barrier-Free-Server.git"
+  },
+  "author": "Yongju Jang (lolhi)",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/lolhi/2019-2_Convergence-Capstone-Design_Barrier-Free-Server/issues"
+  },
+  "homepage": "https://github.com/lolhi/2019-2_Convergence-Capstone-Design_Barrier-Free-Server#readme",
+  "dependencies": {
+    "express": "^4.17.1"
+  }
+}
