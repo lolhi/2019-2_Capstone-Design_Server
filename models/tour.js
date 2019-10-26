@@ -4,7 +4,7 @@ var Schema = mongoose.Schema;
 var tourSchema = new Schema({
     // 기본
     CONTENT_ID: Number,         // Content id
-    CONTENT_TYPE: String,       // Content type id
+    CONTENT_TYPE: Number,       // Content type id
     // 기본정보 조회(defaultYN)
     HOMEPAGE: String,           // 홈페이지
     TEL: String,                // 번호
