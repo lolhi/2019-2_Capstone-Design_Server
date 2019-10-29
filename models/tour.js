@@ -10,7 +10,7 @@ var tourSchema = new Schema({
     TEL: String,                // 번호
     TITLE: String,              // 장소이름
     // 대표이미지 조회(firstImageYN)
-    REPRESNET_IMG: String,      // 대표이미지
+    REPRESENT_IMG: String,      // 대표이미지
     THUMBNAIL: String,          // 썸네일
     // 주소정보 조회(addrinfoYN)
     TOUR_ADDR: String,          // 주소
