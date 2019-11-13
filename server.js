@@ -35,26 +35,129 @@ var server = app.listen(8080, function(){
     console.log("Express server has started on port 8080");
 });
 
-var router = require('./router/router')(app, request, config);
+var router = require('./router/router')(app, request, config, tourDB, tourBarrierFreeDB);
 
 // Make tour database using tour API
 InitDatabase();
 
 function InitDatabase(){
     //DB 삭제
-
-    MakeDatabase();
+    tourDB.remove(function(err, output){
+		if(err) {
+			console.log('error: database remove failure'); 
+			return;
+		}
+		tourDetail12DB.remove(function(err, output){
+            if(err) {
+                console.log('error: database remove failure'); 
+                return;
+            }
+            tourDetail14DB.remove(function(err, output){
+                if(err) {
+                    console.log('error: database remove failure'); 
+                    return;
+                }
+                tourDetail32DB.remove(function(err, output){
+                    if(err) {
+                        console.log('error: database remove failure'); 
+                        return;
+                    }
+                    tourDetail39DB.remove(function(err, output){
+                        if(err) {
+                            console.log('error: database remove failure'); 
+                            return;
+                        }
+                        tourBarrierFreeDB.remove(function(err, output){
+                            if(err) {
+                                console.log('error: database remove failure'); 
+                                return;
+                            }
+                            console.log('db remove success');
+                            MakeDatabase(1);
+                        });
+                    });
+                });
+            });
+        });
+    });
+    
 }
 
-function MakeDatabase(){
-    const option = MakeRequestOption('areaBasedList', {pageNo: 1});
+function MakeDatabase(pageNumber){
+    const option = MakeRequestOption('areaBasedList', {pageNo: pageNumber});
     CallAreaBasedListAPI(option)
         .then(function(jsonStr){
-            MakeTourDetailDatabase(jsonStr, 0);
+            MakeTourDetailDatabase(jsonStr, 'detailCommon', 0, 0, tourDB, {contentId: jsonStr[0].contentid, defaultYN: 'Y', firstImageYN: 'Y', addrinfoYN: 'Y', mapinfoYN: 'Y', overviewYN: 'Y'});
+            
         }, function(errMsg){
             //실패
             console.log(errMsg);
 		});
+}
+
+function CallAreaBasedListAPI(option){
+    return new Promise(async function(resolve, reject){
+        CallRequestLibrary(option)
+        .then(function(result){
+            var jsondata = result;
+                for(var i = 0; i < jsondata.length; i++){
+                    if(jsondata[i].contenttypeid == 15 || jsondata[i].contenttypeid == 28 ||
+                        jsondata[i].contenttypeid == 38){
+                            jsondata.splice(i,1);
+                            i--;
+                    }
+                }
+                resolve(jsondata);
+        }, function(msg){
+            reject(msg);
+        });
+    });
+}
+
+function CallRequestLibrary(option){
+    return new Promise(async function(resolve, reject){
+        request(option, function (error, response, body) {
+            if(error){
+                reject('CallDetailWithTourPromise: request module error : ' + error);
+                return;
+            }
+            if(response.statusCode == 200){
+                var jsondata = JSON.parse(body);
+                if(jsondata.response.header.resultCode == '0000'){
+                    resolve(jsondata.response.body.items.item);
+                    return;
+                }
+                else{
+                    reject('CallDetailWithTourPromise: API error : ' + jsondata.response.header.resultMsg);
+                    return;
+                }
+            }
+        });
+    });
+}
+
+function MakeTourDetailDatabase(jsonStr, tourAPIOperation, idx, idx1, db, query){
+    const option = MakeRequestOption(tourAPIOperation, query);
+    CallTourAPIOperationPromise(option, db, tourAPIOperation)
+    .then(function(){
+        if(idx == jsonStr.length - 1 && idx1 == 1){
+            console.log('finish');
+            return;
+        }
+        else if(idx1 == 0){
+            MakeTourDetailDatabase(jsonStr, 'detailWithTour', idx, idx1 + 1, tourBarrierFreeDB, {contentId: jsonStr[idx].contentid});
+            return;
+        }
+        //else if(idx1 == 1)
+        //    MakeTourDetailDatabase(jsonStr, 'detailIntro', idx, idx1 + 1,tourDetail12DB,{contentId: jsonStr[idx].contentid, contentTypeId: jsonStr[idx].contenttypeid});
+        else if(idx1 == 1){
+            MakeTourDetailDatabase(jsonStr, 'detailCommon', idx + 1, 0, tourDB, {contentId: jsonStr[idx + 1].contentid, defaultYN: 'Y', firstImageYN: 'Y', addrinfoYN: 'Y', mapinfoYN: 'Y', overviewYN: 'Y'});
+            return;
+        }
+    }, function(errMsg){
+        //실패
+        console.log(errMsg);
+    });
 }
 
 function MakeRequestOption(tourAPIOperation, queryStr){
@@ -74,16 +177,25 @@ function MakeRequestOption(tourAPIOperation, queryStr){
     }
 }
 
-/**
- *문자열이 빈 문자열인지 체크하여 기본 문자열로 리턴한다.
- * @param str           : 체크할 문자열
- * @param defaultStr    : 문자열이 비어있을경우 리턴할 기본 문자열
- */
-function nvl(str, defaultStr){
-    if(typeof str == "undefined" || str == null || str == "")
-        str = defaultStr ;
-         
-    return str ;
+function CallTourAPIOperationPromise(option, db, tourAPIOperation){
+    return new Promise(async function(resolve, reject){
+        CallRequestLibrary(option)
+        .then(function(result){
+            var jsondata = result;
+            var schema = MakeSchemaObject(tourAPIOperation, jsondata);
+            var newTourData = new db(schema);
+    
+            newTourData.save(function(err){
+                if(err){
+                    reject('CallDetailCommonPromise: mongoose save function err: ' + err);
+                    return;
+                }
+                resolve();
+            });
+        }, function(msg){
+            reject(msg);
+        });
+    });
 }
 
 function MakeSchemaObject(tourAPIOperation, jsondata){
@@ -112,101 +224,45 @@ function MakeSchemaObject(tourAPIOperation, jsondata){
         return {};
     }
     else if(tourAPIOperation == 'detailWithTour'){
-        return {};
+        return {
+            // 기본
+            CONTENT_ID: nvl(jsondata.contentid, -2147483648),         
+            // 지체장애
+            PARKING: nvl(jsondata.parking, ''),                     
+            ROUTE: nvl(jsondata.route, ''),              
+            PUBLICTRANSPORT: nvl(jsondata.publictransport, ''),    
+            WHEELCHAIR: nvl(jsondata.wheelchair, ''),         
+            HANDICAPETC: nvl(jsondata.handicapetc, ''),        
+            // 시각장애
+            BRAILEBLOCK: nvl(jsondata.braileblock, ''),       
+            HELPDOG: nvl(jsondata.helpdog, ''),            
+            GUIDEHUMAN: nvl(jsondata.guidehuman, ''),         
+            AUDIOGUIDE: nvl(jsondata.audioguide, ''),         
+            BIGPRINT: nvl(jsondata.bigprint, ''),          
+            BRAILEPROMOTION: nvl(jsondata.brailepromotion, ''),    
+            GUIDESYSTEM: nvl(jsondata.guidesystem, ''),        
+            BLINDHANDICAPETC: nvl(jsondata.blindhandicapetc, ''),   
+            // 청각장애
+            SIGNGUIDE: nvl(jsondata.signguide, ''),          
+            VIDEOGUIDE: nvl(jsondata.videoguide, ''),         // 비디오가이드
+            HEARINGHANDICAPETC: nvl(jsondata.hearinghandicapetc, ''), // 청각장애 기타상세
+            // 영유아가족
+            STROLLER: nvl(jsondata.stroller, ''),           // 유모차
+            LACTATIONROOM: nvl(jsondata.lactationroom, ''),      // 수유실
+            BABYSPARECHAIR: nvl(jsondata.babysparechair, ''),     // 유아용보조의자
+            IMFANTSFAMILYETC: nvl(jsondata.infantsfamilyetc, '')    // 영유아 가족 기타상세
+        };
     }
 }
 
-function CallRequestLibrary(option){
-    request(option, function (error, response, body) {
-        if(error){
-            return {
-                code: false,
-                msg: 'CallDetailWithTourPromise: request module error : ' + error
-            };
-        }
-        if(response.statusCode == 200){
-            var jsondata = JSON.parse(body);
-            if(jsondata.response.header.resultCode == '0000'){
-                return {
-                    code: true,
-                    msg: jsondata.response.items.item
-                }
-            }
-            else{
-                return {
-                    code: false,
-                    msg: 'CallDetailWithTourPromise: API error : ' + jsondata.response.header.resultMsg
-                };
-            }
-        }
-    });
-}
-
-function CallAreaBasedListAPI(option){
-    return new Promise(async function(resolve, reject){
-        request(option, function (error, response, body) {
-            if(error){
-				reject('CallAreaBasedListAPI: request module error : ' + error);
-				return;
-            }
-            if(response.statusCode == 200){
-                var jsondata = JSON.parse(body);
-                if(jsondata.response.header.resultCode == '0000'){
-                    for(var i = 0; i < jsondata.response.body.items.item.length; i++){
-                        if(jsondata.response.body.items.item[i].contenttypeid == 15 || jsondata.response.body.items.item[i].contenttypeid == 28 ||
-                            jsondata.response.body.items.item[i].contenttypeid == 38){
-                                jsondata.response.body.items.item.splice(i,1);
-                                i--;
-                        }
-                    }
-                    resolve(jsondata.response.body.items.item);
-                }
-                else{
-                    reject('CallAreaBasedListAPI: API error : ' + jsondata.response.header.resultMsg);
-                    return;
-                }
-            }
-        });
-    });
-}
-
-function MakeTourDetailDatabase(jsonStr, tourAPIOperation, idx, idx1){
-    const option = MakeRequestOption(tourAPIOperation, {contentId: jsonStr[idx].contentid, defaultYN: 'Y', firstImageYN: 'Y', addrinfoYN: 'Y', mapinfoYN: 'Y', overviewYN: 'Y'});
-    CallTourAPIOperationPromise(option)
-    .then(function(){
-        if(idx == jsonStr.length)
-            return;
-        else if(idx1 == 0)
-            MakeTourDetailDatabase(jsonStr, 'detailWithTour', idx, idx1 + 1);
-        else if(idx1 == 1)
-            MakeTourDetailDatabase(jsonStr, 'detailIntro', idx, idx1 + 1);
-        else if(idx1 == 2)
-            return;
-        MakeTourDetailDatabase(jsonStr, 'detailCommon', idx + 1, 0);
-    }, function(errMsg){
-        //실패
-        console.log(errMsg);
-    });
-}
-
-function CallTourAPIOperationPromise(option, db, tourAPIOperation){
-    return new Promise(async function(resolve, reject){
-        const result = CallRequestLibrary(option);
-        if(!result.code){
-            reject(result.msg);
-        }
-        else{
-            var jsondata = result.msg;
-            var schema = MakeSchemaObject(tourAPIOperation, jsondata);
-            var newTourData = new db(schema);
-    
-            newTourData.save(function(err){
-                if(err){
-                    reject('CallDetailCommonPromise: mongoose save function err: ' + err);
-                    return;
-                }
-                resolve();
-            });
-        }
-    });
+/**
+ *문자열이 빈 문자열인지 체크하여 기본 문자열로 리턴한다.
+ * @param str           : 체크할 문자열
+ * @param defaultStr    : 문자열이 비어있을경우 리턴할 기본 문자열
+ */
+function nvl(str, defaultStr){
+    if(typeof str == "undefined" || str == null || str == "")
+        str = defaultStr ;
+         
+    return str ;
 }
