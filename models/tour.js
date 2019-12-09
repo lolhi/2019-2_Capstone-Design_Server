@@ -18,7 +18,8 @@ var tourSchema = new Schema({
     LATITUDE: Number,           // 위도
     LONGITUDE: Number,          // 경도
     // 개요조회(overviewYN)
-    OVERVIEW: String            // 개요
+    OVERVIEW: String,           // 개요
+    READCOUNT: Number           // 조회수
 });
 
 module.exports = mongoose.model('tour', tourSchema);

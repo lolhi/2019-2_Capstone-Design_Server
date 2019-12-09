@@ -8,10 +8,13 @@ var config = require('./config');
 var tourDB = require('./models/tour');
 var tourDetail12DB = require('./models/tour_detail12');
 var tourDetail14DB = require('./models/tour_detail14');
-var tourDetail32DB = require('./models/tour_detail32');
+var tourDetail15DB = require('./models/tour_detail15');
 var tourDetail39DB = require('./models/tour_detail39');
 var tourBarrierFreeDB = require('./models/tour_barrierfree');
 
+var totalCnt = 0;
+var totalSum = 0;
+var out = 0;
 // Setting Mongoose
 var db = mongoose.connection;
 db.on('error', console.error);
@@ -38,10 +41,11 @@ var server = app.listen(8080, function(){
 var router = require('./router/router')(app, request, config, tourDB, tourBarrierFreeDB);
 
 // Make tour database using tour API
-InitDatabase();
+//InitDatabase();
 
 function InitDatabase(){
     //DB 삭제
+    /*
     tourDB.remove(function(err, output){
 		if(err) {
 			console.log('error: database remove failure'); 
@@ -57,7 +61,7 @@ function InitDatabase(){
                     console.log('error: database remove failure'); 
                     return;
                 }
-                tourDetail32DB.remove(function(err, output){
+                tourDetail15DB.remove(function(err, output){
                     if(err) {
                         console.log('error: database remove failure'); 
                         return;
@@ -80,15 +84,37 @@ function InitDatabase(){
             });
         });
     });
-    
+    */
+   //MakeDatabase(10);
+   //MakeDatabase(19);
+   //MakeDatabase(28);13번해야함
+   //MakeDatabase(37);
 }
 
 function MakeDatabase(pageNumber){
     const option = MakeRequestOption('areaBasedList', {pageNo: pageNumber});
     CallAreaBasedListAPI(option)
         .then(function(jsonStr){
-            MakeTourDetailDatabase(jsonStr, 'detailCommon', 0, 0, tourDB, {contentId: jsonStr[0].contentid, defaultYN: 'Y', firstImageYN: 'Y', addrinfoYN: 'Y', mapinfoYN: 'Y', overviewYN: 'Y'});
-            
+            MakeTourDetailDatabase(jsonStr, 'detailCommon', 0, 0, tourDB, {contentId: jsonStr[0].contentid, defaultYN: 'Y', firstImageYN: 'Y', addrinfoYN: 'Y', mapinfoYN: 'Y', overviewYN: 'Y'})
+            .then(function(){
+                console.log('pageNum: '+ pageNumber + ' Finish')
+                /*
+                totalCnt = totalCnt - 100;
+                if(totalCnt > 0)
+                    MakeDatabase(pageNumber + 1);
+                else
+                    console.log('totalSum: ' + totalSum);
+                */
+                out += 100;
+                if(out < 1400)
+                    MakeDatabase(pageNumber + 1);
+                else
+                    console.log('totalSum: ' + totalSum + 'pageNumber: ' + pageNumber);
+                return;
+            }, function(errMsg){
+                console.log(errMsg);
+                return;
+            });
         }, function(errMsg){
             //실패
             console.log(errMsg);
@@ -99,14 +125,17 @@ function CallAreaBasedListAPI(option){
     return new Promise(async function(resolve, reject){
         CallRequestLibrary(option)
         .then(function(result){
-            var jsondata = result;
+            if(totalCnt == 0)
+                totalCnt = result.totalCount;
+            var jsondata = result.items.item;
                 for(var i = 0; i < jsondata.length; i++){
-                    if(jsondata[i].contenttypeid == 15 || jsondata[i].contenttypeid == 28 ||
+                    if(jsondata[i].contenttypeid == 32 || jsondata[i].contenttypeid == 28 ||
                         jsondata[i].contenttypeid == 38){
                             jsondata.splice(i,1);
                             i--;
                     }
                 }
+                totalSum = totalSum + jsondata.length;
                 resolve(jsondata);
         }, function(msg){
             reject(msg);
@@ -124,7 +153,10 @@ function CallRequestLibrary(option){
             if(response.statusCode == 200){
                 var jsondata = JSON.parse(body);
                 if(jsondata.response.header.resultCode == '0000'){
-                    resolve(jsondata.response.body.items.item);
+                    if(/areaBasedList/.test(option.url))
+                        resolve(jsondata.response.body);
+                    else
+                        resolve(jsondata.response.body.items.item);
                     return;
                 }
                 else{
@@ -137,26 +169,53 @@ function CallRequestLibrary(option){
 }
 
 function MakeTourDetailDatabase(jsonStr, tourAPIOperation, idx, idx1, db, query){
-    const option = MakeRequestOption(tourAPIOperation, query);
-    CallTourAPIOperationPromise(option, db, tourAPIOperation)
-    .then(function(){
-        if(idx == jsonStr.length - 1 && idx1 == 1){
-            console.log('finish');
-            return;
-        }
-        else if(idx1 == 0){
-            MakeTourDetailDatabase(jsonStr, 'detailWithTour', idx, idx1 + 1, tourBarrierFreeDB, {contentId: jsonStr[idx].contentid});
-            return;
-        }
-        //else if(idx1 == 1)
-        //    MakeTourDetailDatabase(jsonStr, 'detailIntro', idx, idx1 + 1,tourDetail12DB,{contentId: jsonStr[idx].contentid, contentTypeId: jsonStr[idx].contenttypeid});
-        else if(idx1 == 1){
-            MakeTourDetailDatabase(jsonStr, 'detailCommon', idx + 1, 0, tourDB, {contentId: jsonStr[idx + 1].contentid, defaultYN: 'Y', firstImageYN: 'Y', addrinfoYN: 'Y', mapinfoYN: 'Y', overviewYN: 'Y'});
-            return;
-        }
-    }, function(errMsg){
-        //실패
-        console.log(errMsg);
+    return new Promise(async function(resolve, reject){
+        const option = MakeRequestOption(tourAPIOperation, query);
+        CallTourAPIOperationPromise(option, db, tourAPIOperation, jsonStr[idx].readcount)
+        .then(function(){
+            if(idx % 20 == 0 && idx1 == 1)
+                console.log(idx + 'th data save in db')
+            if(idx == jsonStr.length - 1 && idx1 == 1){
+                resolve();
+                return;
+            }
+            else if(idx1 == 0){
+                MakeTourDetailDatabase(jsonStr, 'detailWithTour', idx, idx1 + 1, tourBarrierFreeDB, {contentId: jsonStr[idx].contentid})
+                .then(function(){
+                    resolve();
+                    return;
+                }, function(errMsg){
+                    reject(errMsg);
+                    return;
+                });
+                return;
+            }
+            /*
+            else if(idx1 == 1){
+                MakeTourDetailDatabase(jsonStr, 'detailIntro', idx, idx1 + 1,tourDetail12DB,{contentId: jsonStr[idx].contentid, contentTypeId: jsonStr[idx].contenttypeid})
+                .then(function(){
+                    resolve();
+                    return;
+                }, function(errMsg){
+                    reject(errMsg);
+                    return;
+                });
+            }
+            */
+            else if(idx1 == 1){
+                MakeTourDetailDatabase(jsonStr, 'detailCommon', idx + 1, 0, tourDB, {contentId: jsonStr[idx + 1].contentid, defaultYN: 'Y', firstImageYN: 'Y', addrinfoYN: 'Y', mapinfoYN: 'Y', overviewYN: 'Y'})
+                .then(function(){
+                    resolve();
+                    return;
+                }, function(errMsg){
+                    reject(errMsg);
+                    return;
+                });
+            }
+        }, function(errMsg){
+            //실패
+            reject(errMsg);
+        });
     });
 }
 
@@ -177,12 +236,12 @@ function MakeRequestOption(tourAPIOperation, queryStr){
     }
 }
 
-function CallTourAPIOperationPromise(option, db, tourAPIOperation){
+function CallTourAPIOperationPromise(option, db, tourAPIOperation, readCount){
     return new Promise(async function(resolve, reject){
         CallRequestLibrary(option)
         .then(function(result){
             var jsondata = result;
-            var schema = MakeSchemaObject(tourAPIOperation, jsondata);
+            var schema = MakeSchemaObject(tourAPIOperation, jsondata, readCount);
             var newTourData = new db(schema);
     
             newTourData.save(function(err){
@@ -198,7 +257,7 @@ function CallTourAPIOperationPromise(option, db, tourAPIOperation){
     });
 }
 
-function MakeSchemaObject(tourAPIOperation, jsondata){
+function MakeSchemaObject(tourAPIOperation, jsondata, readCount){
     if(tourAPIOperation == 'detailCommon') {
         return {
             // 기본
@@ -217,11 +276,29 @@ function MakeSchemaObject(tourAPIOperation, jsondata){
             LATITUDE: nvl(jsondata.mapy, ''),                             // 위도
             LONGITUDE: nvl(jsondata.mapx, ''),                            // 경도
             // 개요조회(overviewYN)
-            OVERVIEW: nvl(jsondata.overview, '')                          // 개요
+            OVERVIEW: nvl(jsondata.overview, ''),                         // 개요
+            READCOUNT: nvl(readCount, -2147483648)                // 조회수
         };
     }
     else if(tourAPIOperation == 'detailIntro'){
-        return {};
+        return {
+            /*
+            // 기본
+            CONTENT_ID: nvl(jsondata.contentid, -2147483648),             // Content id
+            CONTENT_TYPE: nvl(jsondata.contenttypeid, -2147483648),       // Content type id
+            // contentTypeId=15 (축제)
+            AGELIMIT: nvl(jsondata.agelimit, ''),                         // 관람 가능연령
+            BOOKINGPLACE: nvl(jsondata.bookingplace, ''),                 // 예매처
+            EVENTSTARTDATE: nvl(jsondata.eventstartdate, ''),             // 행사 시작일
+            EVENTENDDATE: nvl(jsondata.eventenddate, ''),                 // 행사 종료일
+            EVENTHOMEPAGE: nvl(jsondata.eventhomepage, ''),               // 행사 홈페이지
+            EVENTPLACE: nvl(jsondata.eventplace, ''),                     // 행사 장소
+            PLACEINFO: nvl(jsondata.placeinfo, ''),                       // 행사장 위치안내
+            PROGRAM: nvl(jsondata.program, ''),                           // 행사 프로그램
+            SUBEVENT: nvl(jsondata.subevent, ''),                         // 부대행사
+            USETIMEFESTIVAL: nvl(jsondata.usetimefestival, ''),           // 이용요금
+            */
+        };
     }
     else if(tourAPIOperation == 'detailWithTour'){
         return {
